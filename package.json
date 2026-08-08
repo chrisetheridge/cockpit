@@ -1,0 +1,42 @@
+{
+  "name": "@plane/plane-cli",
+  "version": "0.1.0",
+  "description": "Agent-first command-line client for Plane",
+  "bin": {
+    "cockpit": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills/plane-cli"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint src test",
+    "format": "oxfmt ."
+  },
+  "dependencies": {
+    "@inkjs/ui": "2.0.0",
+    "@makeplane/plane-node-sdk": "0.2.12",
+    "dist": "link:dist",
+    "ink": "7.1.1",
+    "pastel": "4.0.1",
+    "react": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.18",
+    "ink-testing-library": "4.0.0",
+    "oxfmt": "0.62.0",
+    "oxlint": "1.77.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@11.20.0"
+}
