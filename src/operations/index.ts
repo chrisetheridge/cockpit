@@ -5,7 +5,7 @@ import {
   type ResolvedConfig,
 } from "../core/client.js";
 import { collectPages } from "../core/pagination.js";
-import { CliError } from "../core/errors.js";
+import { asCliError, CliError } from "../core/errors.js";
 import { pickUnique, resolveNamed, resolveProject, resolveWorkItem } from "../core/resolve.js";
 import { parseData } from "../core/data.js";
 
@@ -156,11 +156,24 @@ async function projectOperation(
   if (action === "get")
     return { data: await client.projects.retrieve(workspace, project.id), meta: {} };
   if (action === "delete")
-    return destructive(() => client.projects.delete(workspace, project.id), project, input);
+    return destructive(
+      () => client.projects.delete(workspace, project.id),
+      project,
+      input,
+      () => verifyAbsent(() => client.projects.retrieve(workspace, project.id)),
+    );
   if (action === "archive")
-    return mutation(client.projects.archive(workspace, project.id), project);
+    return mutation(
+      client.projects.archive(workspace, project.id),
+      project,
+      () => client.projects.retrieve(workspace, project.id),
+    );
   if (action === "unarchive")
-    return mutation(client.projects.unArchive(workspace, project.id), project);
+    return mutation(
+      client.projects.unArchive(workspace, project.id),
+      project,
+      () => client.projects.retrieve(workspace, project.id),
+    );
   if (action === "update")
     return {
       data: await client.projects.update(
@@ -265,11 +278,24 @@ async function workItemOperation(
   if (action === "get")
     return { data: await client.workItems.retrieve(workspace, projectId, item.id), meta: {} };
   if (action === "delete")
-    return destructive(() => client.workItems.delete(workspace, projectId, item.id), item, input);
+    return destructive(
+      () => client.workItems.delete(workspace, projectId, item.id),
+      item,
+      input,
+      () => verifyAbsent(() => client.workItems.retrieve(workspace, projectId, item.id)),
+    );
   if (action === "archive")
-    return mutation(client.workItems.archive(workspace, projectId, item.id), item);
+    return mutation(
+      client.workItems.archive(workspace, projectId, item.id),
+      item,
+      () => client.workItems.retrieve(workspace, projectId, item.id),
+    );
   if (action === "unarchive")
-    return mutation(client.workItems.unarchive(workspace, projectId, item.id), item);
+    return mutation(
+      client.workItems.unarchive(workspace, projectId, item.id),
+      item,
+      () => client.workItems.retrieve(workspace, projectId, item.id),
+    );
   if (action === "update")
     return {
       data: await client.workItems.update(
@@ -356,7 +382,12 @@ async function simpleProjectResource(
       meta: {},
     };
   if (action === "delete")
-    return destructive(() => api.delete(workspace, project.id, current.id), current, input);
+    return destructive(
+      () => api.delete(workspace, project.id, current.id),
+      current,
+      input,
+      () => verifyAbsent(() => api.retrieve(workspace, project.id, current.id)),
+    );
   throw new CliError("usage", `Unsupported ${resource} action: ${action}`);
 }
 
@@ -408,6 +439,7 @@ async function commentOperation(
       () => api.delete(workspace, projectId, item.id, commentId),
       { id: commentId },
       input,
+      () => verifyAbsent(() => api.retrieve(workspace, projectId, item.id, commentId)),
     );
   throw new CliError("usage", `Unsupported comment action: ${action}`);
 }
@@ -434,12 +466,19 @@ async function relationOperation(
       source: item.id,
       target: related.id,
       relationType: input.options.type,
+    }, async () => {
+      const relations = await api.list(workspace, projectId, item.id);
+      verifyCollectionContains(relations, related.id, "Relation add");
     });
   if (action === "remove")
     return destructive(
       () => api.delete(workspace, projectId, item.id, { related_issue: related.id }),
       { source: item.id, target: related.id },
       input,
+      async () => {
+        const relations = await api.list(workspace, projectId, item.id);
+        verifyCollectionMissing(relations, related.id, "Relation removal");
+      },
     );
   throw new CliError("usage", `Unsupported relation action: ${action}`);
 }
@@ -514,7 +553,12 @@ async function containerOperation(
       meta: {},
     };
   if (action === "delete")
-    return destructive(() => api.delete(workspace, project.id, current.id), current, input);
+    return destructive(
+      () => api.delete(workspace, project.id, current.id),
+      current,
+      input,
+      () => verifyAbsent(() => api.retrieve(workspace, project.id, current.id)),
+    );
   if (action === "archive" || action === "unarchive")
     return mutation(
       api[
@@ -527,6 +571,7 @@ async function containerOperation(
             : "unArchiveModule"
       ](workspace, project.id, current.id),
       current,
+      () => api.retrieve(workspace, project.id, current.id),
     );
   if (action === "list-items")
     return paged(
@@ -547,6 +592,7 @@ async function containerOperation(
         new_cycle_id: input.options.newCycle,
       }),
       { cycle: current.id, newCycle: input.options.newCycle },
+      () => verifyContainerEmpty(api, "cycle", workspace, project.id, current.id as string),
     );
   }
   const item = await resolveWorkItem(client, workspace, project.id, input.options.workItem);
@@ -559,6 +605,16 @@ async function containerOperation(
         [item.id],
       ),
       { container: current.id, workItem: item.id },
+      () =>
+        verifyContainerMembership(
+          api,
+          resource,
+          workspace,
+          project.id,
+          current.id as string,
+          item.id as string,
+          true,
+        ),
     );
   if (action === "remove-item")
     return destructive(
@@ -571,6 +627,16 @@ async function containerOperation(
         ),
       { container: current.id, workItem: item.id },
       input,
+      () =>
+        verifyContainerMembership(
+          api,
+          resource,
+          workspace,
+          project.id,
+          current.id as string,
+          item.id as string,
+          false,
+        ),
     );
   throw new CliError("usage", `Unsupported ${resource} action: ${action}`);
 }
@@ -583,15 +649,21 @@ async function paged(
   return { data: page.results, meta: page.meta };
 }
 
-async function mutation(promise: Promise<unknown>, fallback: unknown): Promise<any> {
+async function mutation(
+  promise: Promise<unknown>,
+  fallback: unknown,
+  verify?: () => Promise<unknown>,
+): Promise<any> {
   await promise;
-  return { data: fallback, meta: {} };
+  const verified = await verify?.();
+  return { data: verified === undefined ? fallback : verified, meta: {} };
 }
 
 async function destructive(
   promise: () => Promise<unknown>,
   target: unknown,
   input: OperationInput,
+  verify?: () => Promise<unknown>,
 ): Promise<any> {
   if (!input.options.yes) {
     if (input.options.noInput || !process.stdin.isTTY)
@@ -602,7 +674,103 @@ async function destructive(
     throw new CliError("usage", "Confirmation is required. Re-run with --yes.");
   }
   await promise();
-  return { data: { deleted: true, target }, meta: {} };
+  await verify?.();
+  return { data: { deleted: true, target, verified: Boolean(verify) }, meta: {} };
+}
+
+async function verifyAbsent(read: () => Promise<unknown>): Promise<void> {
+  try {
+    await read();
+  } catch (error) {
+    if (asCliError(error).code === "not_found") return;
+    throw error;
+  }
+  throw new CliError("conflict", "Mutation completed but deletion could not be verified.");
+}
+
+async function verifyContainerMembership(
+  api: any,
+  resource: "cycle" | "module",
+  workspace: string,
+  projectId: string,
+  containerId: string,
+  workItemId: string,
+  expected: boolean,
+): Promise<void> {
+  const page = await collectPages<Record<string, unknown>>(
+    (cursor, limit) =>
+      api[resource === "cycle" ? "listWorkItemsInCycle" : "listWorkItemsInModule"](
+        workspace,
+        projectId,
+        containerId,
+        { cursor, per_page: limit ?? 100 },
+      ),
+    { all: true },
+  );
+  const found = page.results.some((item) => referencesId(item, workItemId));
+  if (found !== expected)
+    throw new CliError(
+      "conflict",
+      `${resource} membership mutation could not be verified.`,
+    );
+}
+
+async function verifyContainerEmpty(
+  api: any,
+  resource: "cycle" | "module",
+  workspace: string,
+  projectId: string,
+  containerId: string,
+): Promise<void> {
+  const page = await collectPages(
+    (cursor, limit) =>
+      api.listWorkItemsInCycle(workspace, projectId, containerId, {
+        cursor,
+        per_page: limit ?? 100,
+      }),
+    { all: true },
+  );
+  if (page.results.length > 0)
+    throw new CliError("conflict", `${resource} transfer could not be verified.`);
+}
+
+function verifyCollectionContains(value: unknown, id: string, operation: string): void {
+  if (!collectionHasId(value, id))
+    throw new CliError("conflict", `${operation} could not be verified.`);
+}
+
+function verifyCollectionMissing(value: unknown, id: string, operation: string): void {
+  if (collectionHasId(value, id))
+    throw new CliError("conflict", `${operation} could not be verified.`);
+}
+
+function collectionHasId(value: unknown, id: string): boolean {
+  return collectionReferences(value).some((item) =>
+    typeof item === "string" ? item === id : isRecord(item) && referencesId(item, id),
+  );
+}
+
+function collectionReferences(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.results)) return value.results;
+  if (isRecord(value)) return Object.values(value).flatMap((item) => (Array.isArray(item) ? item : []));
+  return [];
+}
+
+function referencesId(value: Record<string, unknown>, id: string): boolean {
+  return [
+    value.id,
+    value.issue_id,
+    value.related_issue,
+    value.related_issue_id,
+    value.work_item_id,
+    value.target,
+    value.target_id,
+  ].includes(id);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function listParams(options: Record<string, any>): Record<string, unknown> {
