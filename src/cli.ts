@@ -27,10 +27,23 @@ function machineHelpTarget(argv: string[]): string | undefined {
   if (helpIndex < 0 && helpFlagIndex < 0) return undefined;
   const start = helpIndex >= 0 ? helpIndex + 1 : 0;
   const end = helpIndex >= 0 ? argv.length : helpFlagIndex;
-  return argv
-    .slice(start, end)
-    .filter((value) => !value.startsWith("-"))
-    .join(" ");
+  const valueOptions = new Set([
+    "--base-url",
+    "--workspace",
+    "--project",
+    "--profile",
+    "--output",
+  ]);
+  const target: string[] = [];
+  for (let index = start; index < end; index += 1) {
+    const value = argv[index];
+    if (value.startsWith("-")) {
+      if (valueOptions.has(value)) index += 1;
+      continue;
+    }
+    target.push(value);
+  }
+  return target.join(" ");
 }
 
 function writeMachineResult(data: unknown): void {
