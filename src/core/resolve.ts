@@ -58,9 +58,11 @@ export async function resolveWorkItem(
 ): Promise<any> {
   if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(reference))
     return client.workItems.retrieveByIdentifier(workspace, reference);
-  if (isUuid(reference) && project) return client.workItems.retrieve(workspace, project, reference);
-  const page = project
-    ? await client.workItems.list(workspace, project, { per_page: 100 })
+  const projectId = project ? (await resolveProject(client, workspace, project)).id : undefined;
+  if (isUuid(reference) && projectId)
+    return client.workItems.retrieve(workspace, projectId, reference);
+  const page = projectId
+    ? await client.workItems.list(workspace, projectId, { per_page: 100 })
     : await client.workItems.listWorkspace(workspace, { per_page: 100 });
   return pickUnique(reference, page.results ?? [], "Work item");
 }

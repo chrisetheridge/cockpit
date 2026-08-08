@@ -89,6 +89,12 @@ Install the packaged skill into an agent skills directory:
 cockpit skill install --target ~/.agents/skills
 ```
 
+Or install it directly from GitHub with `npx skills`:
+
+```sh
+npx skills add chrisetheridge/cockpit --skill plane-cli --agent codex --global --yes
+```
+
 The skill documents safe command discovery, reference resolution, pagination, mutation verification, and failure handling.
 
 ## Development

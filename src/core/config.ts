@@ -1,5 +1,4 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { CliError } from "./errors.js";
@@ -27,15 +26,7 @@ export type ConfigOverrides = {
 };
 
 export function configPath(): string {
-  if (platform() === "win32")
-    return join(
-      process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"),
-      "plane",
-      "config.json",
-    );
-  if (platform() === "darwin")
-    return join(homedir(), "Library", "Application Support", "plane", "config.json");
-  return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "plane", "config.json");
+  return join(process.cwd(), ".cockpit", "config.json");
 }
 
 export function readConfig(): ConfigFile {

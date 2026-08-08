@@ -1,0 +1,10 @@
+{
+  "active": "self-hosted",
+  "profiles": {
+    "self-hosted": {
+      "workspace": "mce-software",
+      "project": "MYHOUSEGUI",
+      "baseUrl": "https://tasks.mce-software.com"
+    }
+  }
+}

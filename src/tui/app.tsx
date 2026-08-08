@@ -203,7 +203,9 @@ export function App({
         return setSelected((value) => Math.min(value + 1, Math.max(filtered.length - 1, 0)));
       if (input === "k" || key.upArrow) return setSelected((value) => Math.max(value - 1, 0));
       if (key.pageDown)
-        return setSelected((value) => Math.min(value + visibleCount, Math.max(filtered.length - 1, 0)));
+        return setSelected((value) =>
+          Math.min(value + visibleCount, Math.max(filtered.length - 1, 0)),
+        );
       if (key.pageUp) return setSelected((value) => Math.max(value - visibleCount, 0));
       if (key.home) return setSelected(0);
       if (key.end) return setSelected(Math.max(filtered.length - 1, 0));
@@ -237,7 +239,7 @@ export function App({
   const panelHeight = Math.max(8, rows - 13);
   const visibleCount = Math.max(1, Math.floor((panelHeight - 6) / 3));
   const maxStart = Math.max(filtered.length - visibleCount, 0);
-  const start = Math.min(Math.max(selected - 1, 0), maxStart);
+  const start = Math.min(Math.max(selected - visibleCount + 1, 0), maxStart);
   const visibleItems = filtered.slice(start, start + visibleCount);
 
   return (
@@ -305,9 +307,7 @@ export function App({
             {message}
           </Text>
         ) : (
-          <Text dimColor>
-            {current ? `Selected ${identifierOf(current)} · ready` : "No selection"}
-          </Text>
+          <Text dimColor>{current ? "Ready" : "No selection"}</Text>
         )}
       </Box>
       <Footer mode={mode} />
@@ -367,6 +367,7 @@ function ListPanel({
   query,
   isWide,
   empty,
+  height,
 }: {
   items: Item[];
   selected: number;
@@ -375,11 +376,14 @@ function ListPanel({
   query: string;
   isWide: boolean;
   empty: boolean;
+  height: number;
 }): React.ReactElement {
   return (
     <Box
       flexDirection="column"
       width={isWide ? "58%" : "100%"}
+      height={height}
+      overflow="hidden"
       borderStyle="round"
       borderColor={COLORS.border}
       paddingX={1}
@@ -423,20 +427,21 @@ function ListPanel({
 
 function WorkItemRow({ item, focused }: { item: Item; focused: boolean }): React.ReactElement {
   return (
-    <Box
-      width="100%"
-      paddingX={1}
-      paddingY={0}
-      marginBottom={1}
-      backgroundColor={focused ? COLORS.panelSelected : undefined}
-    >
-      <Text color={focused ? COLORS.accent : COLORS.muted} bold>
+    <Box width="100%" paddingX={1} paddingY={0} marginBottom={1}>
+      <Text color={focused ? COLORS.accent : COLORS.muted} bold inverse={focused}>
         {focused ? "❯" : " "}
       </Text>
       <Box flexDirection="column" paddingLeft={1} width="100%">
-        <Text color={focused ? COLORS.text : COLORS.accentSoft} bold wrap="truncate-end">
-          {identifierOf(item)}{" "}
-          <Text color={focused ? COLORS.text : COLORS.accentSoft}>{titleOf(item)}</Text>
+        <Text
+          color={focused ? COLORS.text : COLORS.accentSoft}
+          bold
+          inverse={focused}
+          wrap="truncate-end"
+        >
+          {displayRefOf(item) ? `${displayRefOf(item)} ` : ""}
+          <Text color={focused ? COLORS.text : COLORS.accentSoft} inverse={focused}>
+            {titleOf(item)}
+          </Text>
         </Text>
         <Text dimColor wrap="truncate-end">
           {statusGlyph(item)} {statusOf(item)}{" "}
@@ -451,14 +456,18 @@ function WorkItemRow({ item, focused }: { item: Item; focused: boolean }): React
 function DetailPanel({
   item,
   narrow = false,
+  height,
 }: {
   item?: Item;
   narrow?: boolean;
+  height?: number;
 }): React.ReactElement {
   return (
     <Box
       flexDirection="column"
       width={narrow ? "100%" : "42%"}
+      height={height}
+      overflow="hidden"
       borderStyle="round"
       borderColor={narrow ? COLORS.borderBright : COLORS.border}
       paddingX={2}
@@ -472,10 +481,6 @@ function DetailPanel({
         </Box>
       ) : (
         <>
-          <Text color={COLORS.muted}>INSPECTING</Text>
-          <Text color={COLORS.accent} bold>
-            {identifierOf(item)}
-          </Text>
           <Text color={COLORS.text} bold wrap="wrap">
             {titleOf(item)}
           </Text>
@@ -540,7 +545,7 @@ function SearchPanel({
         <TextInput
           key="search"
           defaultValue={query}
-          placeholder="identifier or title"
+          placeholder="title"
           onChange={onChange}
           onSubmit={onSubmit}
         />
@@ -627,7 +632,7 @@ function ConfirmPanel({
         DELETE WORK ITEM
       </Text>
       <Text color={COLORS.text} wrap="wrap">
-        Delete {identifierOf(item)} · {titleOf(item)}?
+        Delete {titleOf(item)}?
       </Text>
       <Text dimColor>This cannot be undone.</Text>
       <Box marginTop={1}>
@@ -666,18 +671,24 @@ function PalettePanel({
       <Text dimColor>Choose an action for the current project.</Text>
       <Box flexDirection="column" marginTop={1}>
         {actions.map((action, index) => (
-          <Box
-            key={action.shortcut}
-            paddingX={1}
-            backgroundColor={index === selected ? COLORS.panelSelected : undefined}
-          >
-            <Text color={index === selected ? COLORS.accent : COLORS.muted}>
+          <Box key={action.shortcut} paddingX={1}>
+            <Text
+              color={index === selected ? COLORS.accent : COLORS.muted}
+              inverse={index === selected}
+            >
               {index === selected ? "❯" : " "}{" "}
             </Text>
-            <Text color={action.disabled ? COLORS.muted : COLORS.text} dimColor={action.disabled}>
+            <Text
+              color={action.disabled ? COLORS.muted : COLORS.text}
+              dimColor={action.disabled}
+              inverse={index === selected}
+            >
               {action.label}
             </Text>
-            <Text dimColor> {action.shortcut}</Text>
+            <Text dimColor inverse={index === selected}>
+              {" "}
+              {action.shortcut}
+            </Text>
           </Box>
         ))}
       </Box>
@@ -691,7 +702,7 @@ function Footer({ mode }: { mode: Mode }): React.ReactElement {
     <Box paddingX={1} paddingY={1} justifyContent="space-between" width="100%">
       <Text dimColor>
         {mode === "home" || mode === "detail"
-          ? "j/k move  enter inspect  / filter  : commands"
+          ? "j/k move  pgup/pgdn page  home/end jump  / filter  : commands"
           : "Esc back"}
       </Text>
       <Text color={COLORS.muted}>q quit</Text>
@@ -732,8 +743,14 @@ export function truncate(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, Math.max(0, length - 1))}…` : value;
 }
 
-function identifierOf(item?: Item): string {
-  return String(item?.identifier ?? item?.id ?? "—");
+function displayRefOf(item?: Item): string {
+  const sequence = item?.sequence_id ?? item?.sequenceId ?? item?.number;
+  if (sequence !== undefined && sequence !== null) {
+    const project = item?.project_identifier ?? item?.projectIdentifier;
+    return project ? `${project}-${sequence}` : String(sequence);
+  }
+  const identifier = item?.identifier;
+  return typeof identifier === "string" && !isUuid(identifier) ? identifier : "";
 }
 
 function titleOf(item?: Item): string {
@@ -741,9 +758,8 @@ function titleOf(item?: Item): string {
 }
 
 function statusOf(item: Item): string {
-  return String(
-    item?.state_name ?? item?.state?.name ?? item?.state ?? item?.status ?? "Unstarted",
-  );
+  const status = item?.state_name ?? item?.state?.name ?? item?.state ?? item?.status;
+  return isUuid(status) || !status ? "Unstarted" : String(status);
 }
 
 function statusGlyph(item: Item): string {
@@ -767,10 +783,15 @@ function priorityColor(item: Item): string {
 function assigneeOf(item: Item): string {
   const assignee = item?.assignee ?? item?.assignees?.[0];
   if (!assignee) return "";
-  if (typeof assignee === "string") return assignee;
-  return String(
+  if (typeof assignee === "string") return isUuid(assignee) ? "" : assignee;
+  const label = String(
     assignee.display_name ?? assignee.name ?? assignee.email ?? assignee.id ?? "Assigned",
   );
+  return isUuid(label) ? "" : label;
+}
+
+function isUuid(value: unknown): boolean {
+  return typeof value === "string" && /^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(value);
 }
 
 function descriptionOf(item: Item): string {

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { configPath } from "../src/core/config.js";
+import * as rootCommand from "../src/commands/index.js";
 import { collectPages } from "../src/core/pagination.js";
 import { asCliError, redact } from "../src/core/errors.js";
-import { pickUnique, resolveProject } from "../src/core/resolve.js";
+import { pickUnique, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
 import { HELP } from "../src/command-helpers.js";
 
 describe("plane CLI contracts", () => {
@@ -58,6 +61,14 @@ describe("plane CLI contracts", () => {
     expect(Object.keys(HELP).some((key) => key === "api")).toBe(false);
   });
 
+  it("does not register shared options on the root command", () => {
+    expect("options" in rootCommand).toBe(false);
+  });
+
+  it("stores configuration in the project-local .cockpit directory", () => {
+    expect(configPath()).toBe(join(process.cwd(), ".cockpit", "config.json"));
+  });
+
   it("resolves projects through the standard endpoint", async () => {
     const calls: string[] = [];
     const project = { id: "project-id", identifier: "ENG" };
@@ -74,5 +85,31 @@ describe("plane CLI contracts", () => {
     };
     await expect(resolveProject(client, "workspace", "ENG")).resolves.toEqual(project);
     expect(calls).toEqual(["list"]);
+  });
+
+  it("resolves the project before retrieving a UUID work item", async () => {
+    const calls: string[] = [];
+    const client = {
+      projects: {
+        list: async () => {
+          calls.push("projects.list");
+          return { results: [{ id: "project-id", identifier: "ENG" }] };
+        },
+      },
+      workItems: {
+        retrieve: async (...args: string[]) => {
+          calls.push(`work-items.retrieve:${args.join(":")}`);
+          return { id: "item-id", project: "project-id" };
+        },
+      },
+    };
+
+    await expect(
+      resolveWorkItem(client, "workspace", "ENG", "11111111-1111-4111-8111-111111111111"),
+    ).resolves.toEqual({ id: "item-id", project: "project-id" });
+    expect(calls).toEqual([
+      "projects.list",
+      "work-items.retrieve:workspace:project-id:11111111-1111-4111-8111-111111111111",
+    ]);
   });
 });

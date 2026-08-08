@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "plane-cli": {
+      "source": "chrisetheridge/cockpit",
+      "sourceType": "github",
+      "skillPath": "skills/plane-cli/SKILL.md",
+      "computedHash": "bce405499a95a5698f12e6a092d584f7730f2f34ab28c17558c417b36f9e30a8"
+    }
+  }
+}

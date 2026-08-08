@@ -1,12 +1,11 @@
 import { useEffect } from "react";
-import { commandOptions, helpFor, resolveConfigFromOptions } from "../command-helpers.js";
+import { helpFor, resolveConfigFromOptions } from "../command-helpers.js";
 import { HELP } from "../command-helpers.js";
 import { outputOptions, writeSuccess } from "../core/output.js";
 import { App } from "../tui/app.js";
 import { type CommandProps } from "../command-helpers.js";
 
 export const description = HELP[""].description;
-export const options = commandOptions();
 
 export default function Index({ options }: Pick<CommandProps, "options">) {
   if (
