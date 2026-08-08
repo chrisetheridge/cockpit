@@ -30,7 +30,8 @@ jobs:
         shell: bash
         run: |
           npm version patch --no-git-tag-version
-          echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - run: pnpm run typecheck
       - run: pnpm test
