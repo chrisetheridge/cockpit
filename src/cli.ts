@@ -10,14 +10,18 @@ export function packageVersion(): string {
   return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 }
 
-function machineOutput(argv: string[]): boolean {
-  if (argv.includes("--json") || argv.includes("--jsonl")) return true;
+function requestedOutput(argv: string[]): string | undefined {
+  if (argv.includes("--jsonl")) return "jsonl";
+  if (argv.includes("--json")) return "json";
   const index = argv.findIndex((value) => value === "--output" || value.startsWith("--output="));
-  if (index < 0) return false;
-  const value = argv[index].includes("=")
+  if (index < 0) return undefined;
+  return argv[index].includes("=")
     ? argv[index].slice(argv[index].indexOf("=") + 1)
     : argv[index + 1];
-  return value === "json" || value === "jsonl";
+}
+
+function machineOutput(argv: string[]): boolean {
+  return ["json", "jsonl"].includes(requestedOutput(argv) ?? "");
 }
 
 function machineHelpTarget(argv: string[]): string | undefined {
@@ -69,7 +73,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     return 0;
   } catch (error) {
     const normalized = asCliError(error);
-    writeError(normalized, outputOptions({ json: argv.includes("--json") }));
+    const format = requestedOutput(argv);
+    writeError(
+      normalized,
+      outputOptions({
+        ...(format === "json" ? { json: true } : {}),
+        ...(format === "jsonl" ? { jsonl: true } : {}),
+        ...(format && format !== "json" && format !== "jsonl" ? { output: format } : {}),
+      }),
+    );
     return normalized.exitCode;
   }
 }
