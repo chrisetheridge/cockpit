@@ -1,4 +1,5 @@
 import { CliError } from "./errors.js";
+import { collectPages, type Page } from "./pagination.js";
 
 type Named = {
   id?: string;
@@ -46,8 +47,16 @@ export async function resolveProject(
   reference: string,
 ): Promise<any> {
   if (isUuid(reference)) return client.projects.retrieve(workspace, reference);
-  const page = await client.projects.list(workspace, { include_archived: true, per_page: 100 });
-  return pickUnique(reference, page.results ?? [], "Project");
+  const page = await collectPages<Named>(
+    (cursor, limit) =>
+      client.projects.list(workspace, {
+        include_archived: true,
+        cursor,
+        per_page: limit ?? 100,
+      }),
+    { all: true },
+  );
+  return pickUnique(reference, page.results, "Project");
 }
 
 export async function resolveWorkItem(
@@ -61,19 +70,21 @@ export async function resolveWorkItem(
   const projectId = project ? (await resolveProject(client, workspace, project)).id : undefined;
   if (isUuid(reference) && projectId)
     return client.workItems.retrieve(workspace, projectId, reference);
-  const page = projectId
-    ? await client.workItems.list(workspace, projectId, { per_page: 100 })
-    : await client.workItems.listWorkspace(workspace, { per_page: 100 });
-  return pickUnique(reference, page.results ?? [], "Work item");
+  const page = await collectPages<Named>(
+    (cursor, limit) =>
+      projectId
+        ? client.workItems.list(workspace, projectId, { cursor, per_page: limit ?? 100 })
+        : client.workItems.listWorkspace(workspace, { cursor, per_page: limit ?? 100 }),
+    { all: true },
+  );
+  return pickUnique(reference, page.results, "Work item");
 }
 
-export async function resolveNamed(
-  client: any,
-  method: string,
-  args: unknown[],
+export async function resolveNamed<T extends Named>(
+  fetchPage: (cursor?: string, limit?: number) => Promise<Page<T>>,
   reference: string,
   label: string,
-): Promise<any> {
-  const page = await client[method](...args);
-  return pickUnique(reference, page.results ?? page ?? [], label);
+): Promise<T> {
+  const page = await collectPages(fetchPage, { all: true });
+  return pickUnique(reference, page.results, label);
 }

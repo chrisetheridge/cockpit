@@ -339,9 +339,7 @@ async function simpleProjectResource(
     };
   if (!reference) throw new CliError("usage", `A ${resource} reference is required.`);
   const current = await resolveNamed(
-    api,
-    "list",
-    [workspace, project.id, { limit: 100 }],
+    (cursor, limit) => api.list(workspace, project.id, { cursor, limit: limit ?? 100 }),
     reference,
     resource === "state" ? "State" : "Label",
   );
@@ -485,9 +483,10 @@ async function containerOperation(
   }
   if (!reference) throw new CliError("usage", `A ${resource} reference is required.`);
   const current = await resolveNamed(
-    api,
-    api.listLite ? "listLite" : "list",
-    [workspace, project.id],
+    (cursor, limit) =>
+      api.listLite
+        ? api.listLite(workspace, project.id, { cursor, per_page: limit ?? 100 })
+        : api.list(workspace, project.id, { cursor, limit: limit ?? 100 }),
     reference,
     resource[0].toUpperCase() + resource.slice(1),
   );
@@ -678,9 +677,8 @@ async function resolveWorkItemFields(
   if (typeof resolved.state === "string")
     resolved.state = (
       await resolveNamed(
-        client.states,
-        "list",
-        [workspace, projectId, { limit: 100 }],
+        (cursor, limit) =>
+          client.states.list(workspace, projectId, { cursor, limit: limit ?? 100 }),
         resolved.state,
         "State",
       )
@@ -694,9 +692,10 @@ async function resolveWorkItemFields(
   if (typeof resolved.module === "string")
     resolved.module = (
       await resolveNamed(
-        client.modules,
-        client.modules.listLite ? "listLite" : "list",
-        [workspace, projectId],
+        (cursor, limit) =>
+          client.modules.listLite
+            ? client.modules.listLite(workspace, projectId, { cursor, per_page: limit ?? 100 })
+            : client.modules.list(workspace, projectId, { cursor, limit: limit ?? 100 }),
         resolved.module,
         "Module",
       )

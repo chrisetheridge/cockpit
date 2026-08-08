@@ -6,7 +6,7 @@ import * as rootCommand from "../src/commands/index.js";
 import { collectPages } from "../src/core/pagination.js";
 import { CliError, asCliError, redact } from "../src/core/errors.js";
 import { outputOptions, writeError, writeSuccess } from "../src/core/output.js";
-import { pickUnique, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
+import { pickUnique, resolveNamed, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
 import { HELP, helpFor, runCommand } from "../src/command-helpers.js";
 
 describe("plane CLI contracts", () => {
@@ -149,6 +149,25 @@ describe("plane CLI contracts", () => {
     expect(calls).toEqual(["list"]);
   });
 
+  it("resolves a project beyond the first page", async () => {
+    const cursors: (string | undefined)[] = [];
+    const client = {
+      projects: {
+        list: async (_workspace: string, options: { cursor?: string }) => {
+          cursors.push(options.cursor);
+          return options.cursor
+            ? { results: [{ id: "project-id", identifier: "ENG" }] }
+            : { results: [], next_cursor: "next" };
+        },
+      },
+    };
+    await expect(resolveProject(client, "workspace", "ENG")).resolves.toEqual({
+      id: "project-id",
+      identifier: "ENG",
+    });
+    expect(cursors).toEqual([undefined, "next"]);
+  });
+
   it("resolves the project before retrieving a UUID work item", async () => {
     const calls: string[] = [];
     const client = {
@@ -173,5 +192,22 @@ describe("plane CLI contracts", () => {
       "projects.list",
       "work-items.retrieve:workspace:project-id:11111111-1111-4111-8111-111111111111",
     ]);
+  });
+
+  it("resolves named resources across all pages", async () => {
+    const cursors: (string | undefined)[] = [];
+    await expect(
+      resolveNamed(
+        async (cursor) => {
+          cursors.push(cursor);
+          return cursor
+            ? { results: [{ id: "target", name: "Target" }] }
+            : { results: [], next_cursor: "next" };
+        },
+        "Target",
+        "Resource",
+      ),
+    ).resolves.toEqual({ id: "target", name: "Target" });
+    expect(cursors).toEqual([undefined, "next"]);
   });
 });
