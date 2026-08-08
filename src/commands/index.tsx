@@ -9,8 +9,22 @@ export const description = HELP[""].description;
 export const options = commandOptions();
 
 export default function Index({ options }: Pick<CommandProps, "options">) {
-  if (process.stdin.isTTY && process.stdout.isTTY && !process.env.CI && !options.noInput && !options.json && !options.jsonl && !options.output)
-    return <App config={resolveConfigFromOptions(options)} onExit={() => process.exit(0)} onError={() => undefined} />;
+  if (
+    process.stdin.isTTY &&
+    process.stdout.isTTY &&
+    !process.env.CI &&
+    !options.noInput &&
+    !options.json &&
+    !options.jsonl &&
+    !options.output
+  )
+    return (
+      <App
+        config={resolveConfigFromOptions(options)}
+        terminalMode="manual"
+        onError={() => undefined}
+      />
+    );
   return <Help options={options} />;
 }
 

@@ -1,16 +1,36 @@
-import React, { useEffect, useState } from "react";
-import { Box, Text, render, useInput } from "ink";
+import React, { useEffect, useMemo, useState } from "react";
+import { ConfirmInput, Spinner, TextInput } from "@inkjs/ui";
+import { Box, Text, render, useApp, useInput, useStdout, useWindowSize } from "ink";
 import { type ResolvedConfig } from "../core/client.js";
 import { asCliError } from "../core/errors.js";
 import { resourceOperation } from "../operations/index.js";
 
 type Item = Record<string, any>;
-type Mode = "home" | "detail" | "search" | "create" | "edit" | "confirm";
+type Mode = "home" | "detail" | "search" | "create" | "edit" | "confirm" | "palette";
+
+const COLORS = {
+  accent: "cyan",
+  accentSoft: "cyan",
+  border: "gray",
+  borderBright: "white",
+  danger: "red",
+  good: "green",
+  muted: "gray",
+  purple: "magenta",
+  text: "white",
+  warning: "yellow",
+};
 
 export function runTui(config: ResolvedConfig): Promise<void> {
   return new Promise((resolve, reject) => {
-    const instance = render(<App config={config} onExit={resolve} onError={() => undefined} />);
-    instance.waitUntilExit().catch(reject);
+    const instance = render(<App config={config} />, {
+      alternateScreen: true,
+      incrementalRendering: true,
+    });
+    instance
+      .waitUntilExit()
+      .then(() => resolve())
+      .catch(reject);
   });
 }
 
@@ -18,106 +38,108 @@ export function App({
   config,
   onExit,
   onError,
+  terminalMode = "none",
 }: {
   config: ResolvedConfig;
-  onExit: () => void;
-  onError: (error: unknown) => void;
+  onExit?: () => void;
+  onError?: (error: unknown) => void;
+  terminalMode?: "manual" | "none";
 }): React.ReactElement {
+  const { exit } = useApp();
+  const { columns, rows } = useWindowSize();
   const [items, setItems] = useState<Item[]>([]);
   const [selected, setSelected] = useState(0);
   const [mode, setMode] = useState<Mode>("home");
+  const [paletteReturnMode, setPaletteReturnMode] = useState<"home" | "detail">("home");
+  const [paletteSelected, setPaletteSelected] = useState(0);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
-  const [message, setMessage] = useState("Loading work items...");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  useTerminalTakeover(terminalMode === "manual");
+
+  const filtered = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          !query ||
+          `${item.identifier ?? ""} ${item.name ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [items, query],
+  );
+  const current = filtered[selected];
+  const isWide = columns >= 100;
+  const paletteActions = [
+    { label: "Create work item", shortcut: "c" },
+    { label: "Edit selected item", shortcut: "e", disabled: !current },
+    { label: "Delete selected item", shortcut: "d", disabled: !current },
+    { label: "Refresh work items", shortcut: "r" },
+    { label: "Clear filter", shortcut: "x", disabled: !query },
+    { label: "Quit Cockpit", shortcut: "q" },
+  ];
+  const quit = (): void => {
+    onExit?.();
+    exit();
+  };
+
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    setSelected((value) => Math.min(value, Math.max(filtered.length - 1, 0)));
+  }, [filtered.length]);
+
   async function load(): Promise<void> {
+    setLoading(true);
+    setMessage("");
     try {
       const page = await resourceOperation("work-item", "list", undefined, {
         config,
         options: { limit: 50 },
       });
-      setItems((page.data as Item[]) ?? []);
+      const nextItems = (page.data as Item[]) ?? [];
+      setItems(nextItems);
       setSelected(0);
-      setMessage((page.data as Item[])?.length ? "" : "No work items. Press c to create one.");
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(`${normalized.message} ${normalized.hint ?? ""}`);
-      onError(normalized);
+      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      onError?.(normalized);
+    } finally {
+      setLoading(false);
     }
   }
 
-  useInput((input, key) => {
-    if (mode === "confirm") {
-      if (input.toLowerCase() === "y") void remove();
-      if (key.escape || input.toLowerCase() === "n") setMode("detail");
+  async function save(nextName = name): Promise<void> {
+    if (!nextName.trim()) {
+      setMessage("A title is required.");
       return;
     }
-    if (mode === "search") {
-      if (key.escape || key.return) return setMode("home");
-      if (key.backspace || key.delete) return setQuery((value) => value.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setQuery((value) => value + input);
-      return;
-    }
-    if (mode === "create" || mode === "edit") {
-      if (key.escape) return setMode("detail");
-      if (key.return) return void save();
-      if (key.backspace || key.delete) return setName((value) => value.slice(0, -1));
-      if (input && !key.ctrl && !key.meta) setName((value) => value + input);
-      return;
-    }
-    if (input === "q") return onExit();
-    if (key.escape) return mode === "detail" ? setMode("home") : onExit();
-    if (input === "j" || key.downArrow)
-      return setSelected((value) => Math.min(value + 1, filtered.length - 1));
-    if (input === "k" || key.upArrow) return setSelected((value) => Math.max(value - 1, 0));
-    if (key.return) return setMode("detail");
-    if (input === "/") {
-      setQuery("");
-      setMode("search");
-      return;
-    }
-    if (input === "c") {
-      setName("");
-      setMode("create");
-    }
-    if (input === "e" && filtered[selected]) {
-      setName(filtered[selected].name ?? "");
-      setMode("edit");
-    }
-    if (input === "d" && filtered[selected]) setMode("confirm");
-  });
-
-  const filtered = items.filter(
-    (item) =>
-      !query ||
-      `${item.identifier ?? ""} ${item.name ?? ""}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  const current = filtered[selected];
-  async function save(): Promise<void> {
-    if (!name.trim()) return setMessage("Name is required.");
     try {
-      if (mode === "create")
+      if (mode === "create") {
         await resourceOperation("work-item", "create", undefined, {
           config,
-          options: { name: name.trim() },
+          options: { name: nextName.trim() },
         });
-      else if (current)
+      } else if (current) {
         await resourceOperation("work-item", "update", current.identifier ?? current.id, {
           config,
-          options: { name: name.trim() },
+          options: { name: nextName.trim() },
         });
+      }
       setMode("home");
       await load();
+      setMessage(mode === "create" ? "Work item created." : "Work item updated.");
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(normalized.message);
-      onError(normalized);
+      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      onError?.(normalized);
     }
   }
+
   async function remove(): Promise<void> {
-    if (!current) return setMode("home");
+    if (!current) return;
     try {
       await resourceOperation("work-item", "delete", current.identifier ?? current.id, {
         config,
@@ -125,66 +147,640 @@ export function App({
       });
       setMode("home");
       await load();
+      setMessage("Work item deleted.");
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(normalized.message);
-      onError(normalized);
+      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      onError?.(normalized);
     }
   }
 
+  function openPalette(): void {
+    setPaletteReturnMode(mode === "detail" ? "detail" : "home");
+    setPaletteSelected(0);
+    setMode("palette");
+  }
+
+  function runPaletteAction(): void {
+    const action = paletteActions[paletteSelected];
+    if (!action || action.disabled) return;
+    if (action.shortcut === "c") {
+      setName("");
+      setMode("create");
+    } else if (action.shortcut === "e" && current) {
+      setName(titleOf(current));
+      setMode("edit");
+    } else if (action.shortcut === "d" && current) {
+      setMode("confirm");
+    } else if (action.shortcut === "r") {
+      void load();
+      setMode(paletteReturnMode);
+    } else if (action.shortcut === "x") {
+      setQuery("");
+      setMode(paletteReturnMode);
+    } else if (action.shortcut === "q") {
+      quit();
+    }
+  }
+
+  useInput(
+    (input, key) => {
+      if (mode === "palette") {
+        if (key.escape) return setMode(paletteReturnMode);
+        if (input === "j" || key.downArrow)
+          return setPaletteSelected((value) => Math.min(value + 1, paletteActions.length - 1));
+        if (input === "k" || key.upArrow)
+          return setPaletteSelected((value) => Math.max(value - 1, 0));
+        if (key.home) return setPaletteSelected(0);
+        if (key.end) return setPaletteSelected(paletteActions.length - 1);
+        if (key.return) return runPaletteAction();
+        return;
+      }
+      if (input === "q") return quit();
+      if (key.escape) return mode === "detail" ? setMode("home") : quit();
+      if (input === ":") return openPalette();
+      if (input === "j" || key.downArrow)
+        return setSelected((value) => Math.min(value + 1, Math.max(filtered.length - 1, 0)));
+      if (input === "k" || key.upArrow) return setSelected((value) => Math.max(value - 1, 0));
+      if (key.pageDown)
+        return setSelected((value) => Math.min(value + visibleCount, Math.max(filtered.length - 1, 0)));
+      if (key.pageUp) return setSelected((value) => Math.max(value - visibleCount, 0));
+      if (key.home) return setSelected(0);
+      if (key.end) return setSelected(Math.max(filtered.length - 1, 0));
+      if (key.return && current) return setMode("detail");
+      if (input === "/") {
+        setMode("search");
+        return;
+      }
+      if (input === "c") {
+        setName("");
+        setMode("create");
+      } else if (input === "e" && current) {
+        setName(titleOf(current));
+        setMode("edit");
+      } else if (input === "d" && current) {
+        setMode("confirm");
+      } else if (input === "r") {
+        void load();
+      }
+    },
+    { isActive: mode === "home" || mode === "detail" || mode === "palette" },
+  );
+
+  useInput(
+    (_, key) => {
+      if (key.escape) setMode("detail");
+    },
+    { isActive: mode === "confirm" },
+  );
+
+  const panelHeight = Math.max(8, rows - 13);
+  const visibleCount = Math.max(1, Math.floor((panelHeight - 6) / 3));
+  const maxStart = Math.max(filtered.length - visibleCount, 0);
+  const start = Math.min(Math.max(selected - 1, 0), maxStart);
+  const visibleItems = filtered.slice(start, start + visibleCount);
+
   return (
-    <Box flexDirection="column" width="100%">
-      <Text color="magenta">
-        PLANE / {config.workspace ?? "workspace"} / {config.project ?? "project"}
-      </Text>
-      <Text dimColor>
-        {mode === "home" ? "WORK ITEMS" : mode.toUpperCase()} {query ? ` / ${query}` : ""}
-      </Text>
+    <Box flexDirection="column" width="100%" minHeight={rows}>
+      <Header config={config} columns={columns} itemCount={filtered.length} query={query} />
+
       {mode === "create" || mode === "edit" ? (
-        <Box flexDirection="column" padding={1}>
-          <Text>{mode === "create" ? "CREATE WORK ITEM" : "EDIT WORK ITEM"}</Text>
-          <Text>Name: {name}_</Text>
-          <Text dimColor>Enter save Esc cancel</Text>
-        </Box>
-      ) : mode === "confirm" ? (
-        <Box flexDirection="column" padding={1}>
-          <Text color="yellow">DELETE {current?.identifier ?? current?.id}?</Text>
-          <Text>This cannot be undone. y confirm n cancel</Text>
-        </Box>
+        <FormPanel
+          mode={mode}
+          name={name}
+          onChange={setName}
+          onCancel={() => setMode("home")}
+          onSubmit={save}
+        />
       ) : mode === "search" ? (
-        <Box flexDirection="column" padding={1}>
-          <Text>SEARCH: {query}_</Text>
-          <Text dimColor>Enter accept Esc cancel</Text>
+        <SearchPanel
+          query={query}
+          onChange={setQuery}
+          onCancel={() => setMode("home")}
+          onSubmit={() => setMode("home")}
+        />
+      ) : mode === "confirm" ? (
+        <ConfirmPanel
+          item={current}
+          onCancel={() => setMode("detail")}
+          onConfirm={() => void remove()}
+        />
+      ) : mode === "palette" ? (
+        <PalettePanel actions={paletteActions} selected={paletteSelected} />
+      ) : mode === "detail" && !isWide ? (
+        <DetailPanel item={current} narrow />
+      ) : (
+        <Box
+          flexDirection={isWide ? "row" : "column"}
+          width="100%"
+          flexGrow={1}
+          paddingX={1}
+          gap={1}
+        >
+          <ListPanel
+            items={visibleItems}
+            selected={selected}
+            start={start}
+            total={filtered.length}
+            query={query}
+            isWide={isWide}
+            empty={!loading && filtered.length === 0}
+            height={panelHeight}
+          />
+          {isWide ? <DetailPanel item={current} height={panelHeight} /> : null}
+        </Box>
+      )}
+
+      <Box paddingX={1} minHeight={1}>
+        {loading ? (
+          <Spinner label="Syncing work items" />
+        ) : message ? (
+          <Text
+            color={
+              message.includes("required") || message.includes("failed")
+                ? COLORS.warning
+                : COLORS.good
+            }
+          >
+            {message}
+          </Text>
+        ) : (
+          <Text dimColor>
+            {current ? `Selected ${identifierOf(current)} · ready` : "No selection"}
+          </Text>
+        )}
+      </Box>
+      <Footer mode={mode} />
+    </Box>
+  );
+}
+
+function Header({
+  config,
+  columns,
+  itemCount,
+  query,
+}: {
+  config: ResolvedConfig;
+  columns: number;
+  itemCount: number;
+  query: string;
+}): React.ReactElement {
+  const workspace = config.workspace ?? "workspace";
+  const project = config.project ?? "project";
+  return (
+    <Box flexDirection="column" paddingX={1} paddingTop={1}>
+      <Box justifyContent="space-between" width="100%">
+        <Text color={COLORS.accent} bold>
+          ◆ COCKPIT
+        </Text>
+        <Text color={COLORS.good}>● CONNECTED</Text>
+      </Box>
+      <Box justifyContent="space-between" width="100%" marginTop={1}>
+        <Text color={COLORS.purple}>
+          {workspace} <Text dimColor>/</Text> {project}
+        </Text>
+        <Text dimColor>
+          {itemCount} {itemCount === 1 ? "ITEM" : "ITEMS"}
+        </Text>
+      </Box>
+      <Text color={COLORS.border} wrap="truncate-end">
+        {"─".repeat(Math.max(1, columns - 2))}
+      </Text>
+      <Box justifyContent="space-between" width="100%">
+        <Text color={COLORS.text} bold>
+          WORK ITEMS
+        </Text>
+        <Text color={query ? COLORS.warning : COLORS.muted}>
+          {query ? `FILTER · ${query}` : "ALL ACTIVE"}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function ListPanel({
+  items,
+  selected,
+  start,
+  total,
+  query,
+  isWide,
+  empty,
+}: {
+  items: Item[];
+  selected: number;
+  start: number;
+  total: number;
+  query: string;
+  isWide: boolean;
+  empty: boolean;
+}): React.ReactElement {
+  return (
+    <Box
+      flexDirection="column"
+      width={isWide ? "58%" : "100%"}
+      borderStyle="round"
+      borderColor={COLORS.border}
+      paddingX={1}
+      paddingY={1}
+      aria-label="Work item list"
+      aria-role="listbox"
+    >
+      <Box justifyContent="space-between" marginBottom={1}>
+        <Text color={COLORS.muted}>QUEUE</Text>
+        <Text dimColor>
+          {total ? `${start + 1}–${Math.min(start + items.length, total)} / ${total}` : "EMPTY"}
+        </Text>
+      </Box>
+      {empty ? (
+        <Box flexDirection="column" paddingY={1}>
+          <Text color={COLORS.accent} bold>
+            No work items match.
+          </Text>
+          <Text dimColor>
+            {query
+              ? "Press x in the command palette to clear the filter."
+              : "Press c to create the first one."}
+          </Text>
+        </Box>
+      ) : (
+        items.map((item, index) => {
+          const absoluteIndex = start + index;
+          const focused = absoluteIndex === selected;
+          return (
+            <WorkItemRow
+              key={item.id ?? item.identifier ?? absoluteIndex}
+              item={item}
+              focused={focused}
+            />
+          );
+        })
+      )}
+    </Box>
+  );
+}
+
+function WorkItemRow({ item, focused }: { item: Item; focused: boolean }): React.ReactElement {
+  return (
+    <Box
+      width="100%"
+      paddingX={1}
+      paddingY={0}
+      marginBottom={1}
+      backgroundColor={focused ? COLORS.panelSelected : undefined}
+    >
+      <Text color={focused ? COLORS.accent : COLORS.muted} bold>
+        {focused ? "❯" : " "}
+      </Text>
+      <Box flexDirection="column" paddingLeft={1} width="100%">
+        <Text color={focused ? COLORS.text : COLORS.accentSoft} bold wrap="truncate-end">
+          {identifierOf(item)}{" "}
+          <Text color={focused ? COLORS.text : COLORS.accentSoft}>{titleOf(item)}</Text>
+        </Text>
+        <Text dimColor wrap="truncate-end">
+          {statusGlyph(item)} {statusOf(item)}{" "}
+          <Text color={priorityColor(item)}>{priorityOf(item)}</Text>
+          {assigneeOf(item) ? ` · ${assigneeOf(item)}` : ""}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function DetailPanel({
+  item,
+  narrow = false,
+}: {
+  item?: Item;
+  narrow?: boolean;
+}): React.ReactElement {
+  return (
+    <Box
+      flexDirection="column"
+      width={narrow ? "100%" : "42%"}
+      borderStyle="round"
+      borderColor={narrow ? COLORS.borderBright : COLORS.border}
+      paddingX={2}
+      paddingY={1}
+      aria-label="Selected work item"
+    >
+      {!item ? (
+        <Box flexDirection="column" paddingY={2}>
+          <Text color={COLORS.muted}>NOTHING SELECTED</Text>
+          <Text dimColor>Choose a work item from the queue.</Text>
         </Box>
       ) : (
         <>
-          {message ? (
-            <Text color="yellow">{message}</Text>
-          ) : (
-            filtered.map((item, index) => (
-              <Text key={item.id ?? index} color={index === selected ? "magenta" : undefined}>
-                {index === selected ? "┃" : "│"} {item.identifier ?? item.id} {item.name}{" "}
-                {item.state_name ?? item.state ?? ""}
-              </Text>
-            ))
-          )}
-          {mode === "detail" && current ? (
-            <Box flexDirection="column" padding={1}>
-              <Text bold>
-                {current.identifier ?? current.id} {current.name}
-              </Text>
-              <Text>
-                {current.description_stripped ?? current.description_html ?? "No description."}
-              </Text>
-              <Text dimColor>Esc back e edit d delete q quit</Text>
-            </Box>
-          ) : (
-            <Text dimColor>
-              j/k navigate Enter inspect c create e edit d delete / filter q quit
+          <Text color={COLORS.muted}>INSPECTING</Text>
+          <Text color={COLORS.accent} bold>
+            {identifierOf(item)}
+          </Text>
+          <Text color={COLORS.text} bold wrap="wrap">
+            {titleOf(item)}
+          </Text>
+          <Text color={COLORS.border}>{"─".repeat(28)}</Text>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={COLORS.muted}>STATUS</Text>
+            <Text color={COLORS.text}>
+              {statusGlyph(item)} {statusOf(item)}
             </Text>
-          )}
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={COLORS.muted}>PRIORITY</Text>
+            <Text color={priorityColor(item)}>{priorityOf(item)}</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={COLORS.muted}>DESCRIPTION</Text>
+            <Text color={COLORS.text} wrap="truncate-end">
+              {descriptionOf(item)}
+            </Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={COLORS.muted}>ASSIGNEE</Text>
+            <Text color={COLORS.text}>{assigneeOf(item) || "Unassigned"}</Text>
+          </Box>
+          <Box marginTop={2}>
+            <Text dimColor>Enter open · e edit · d delete</Text>
+          </Box>
         </>
       )}
     </Box>
+  );
+}
+
+function SearchPanel({
+  query,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  query: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: (value: string) => void;
+}): React.ReactElement {
+  useInput((_, key) => {
+    if (key.escape) onCancel();
+  });
+  return (
+    <Box
+      flexDirection="column"
+      width="100%"
+      paddingX={2}
+      paddingY={2}
+      borderStyle="round"
+      borderColor={COLORS.accent}
+    >
+      <Text color={COLORS.accent} bold>
+        FILTER WORK ITEMS
+      </Text>
+      <Box marginTop={1}>
+        <Text color={COLORS.warning}>/ </Text>
+        <TextInput
+          key="search"
+          defaultValue={query}
+          placeholder="identifier or title"
+          onChange={onChange}
+          onSubmit={onSubmit}
+        />
+      </Box>
+      <Text dimColor>Type to filter · Enter apply · Esc cancel</Text>
+    </Box>
+  );
+}
+
+function FormPanel({
+  mode,
+  name,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  mode: "create" | "edit";
+  name: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: (value: string) => void;
+}): React.ReactElement {
+  useInput((_, key) => {
+    if (key.escape) onCancel();
+  });
+  return (
+    <Box
+      flexDirection="column"
+      width="100%"
+      paddingX={2}
+      paddingY={2}
+      borderStyle="round"
+      borderColor={COLORS.accent}
+    >
+      <Text color={COLORS.accent} bold>
+        {mode === "create" ? "NEW WORK ITEM" : "EDIT WORK ITEM"}
+      </Text>
+      <Text dimColor>
+        {mode === "create"
+          ? "Create a focused task in the current project."
+          : "Update the title without leaving the queue."}
+      </Text>
+      <Box marginTop={2}>
+        <Text color={COLORS.muted}>TITLE </Text>
+        <TextInput
+          key={mode}
+          defaultValue={name}
+          placeholder="What needs to happen?"
+          onChange={onChange}
+          onSubmit={onSubmit}
+        />
+      </Box>
+      <Box marginTop={2}>
+        <Text dimColor>Enter save · Esc cancel</Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color={COLORS.warning}>
+          Only the title is editable here; use the command for full field control.
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function ConfirmPanel({
+  item,
+  onCancel,
+  onConfirm,
+}: {
+  item?: Item;
+  onCancel: () => void;
+  onConfirm: () => void;
+}): React.ReactElement {
+  return (
+    <Box
+      flexDirection="column"
+      width="100%"
+      paddingX={2}
+      paddingY={2}
+      borderStyle="round"
+      borderColor={COLORS.danger}
+    >
+      <Text color={COLORS.danger} bold>
+        DELETE WORK ITEM
+      </Text>
+      <Text color={COLORS.text} wrap="wrap">
+        Delete {identifierOf(item)} · {titleOf(item)}?
+      </Text>
+      <Text dimColor>This cannot be undone.</Text>
+      <Box marginTop={1}>
+        <Text color={COLORS.warning}>Confirm </Text>
+        <ConfirmInput
+          defaultChoice="cancel"
+          submitOnEnter={false}
+          onConfirm={onConfirm}
+          onCancel={onCancel}
+        />
+        <Text dimColor> · Esc cancel</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function PalettePanel({
+  actions,
+  selected,
+}: {
+  actions: Array<{ label: string; shortcut: string; disabled?: boolean }>;
+  selected: number;
+}): React.ReactElement {
+  return (
+    <Box
+      flexDirection="column"
+      width="100%"
+      paddingX={2}
+      paddingY={1}
+      borderStyle="round"
+      borderColor={COLORS.purple}
+    >
+      <Text color={COLORS.purple} bold>
+        COMMANDS
+      </Text>
+      <Text dimColor>Choose an action for the current project.</Text>
+      <Box flexDirection="column" marginTop={1}>
+        {actions.map((action, index) => (
+          <Box
+            key={action.shortcut}
+            paddingX={1}
+            backgroundColor={index === selected ? COLORS.panelSelected : undefined}
+          >
+            <Text color={index === selected ? COLORS.accent : COLORS.muted}>
+              {index === selected ? "❯" : " "}{" "}
+            </Text>
+            <Text color={action.disabled ? COLORS.muted : COLORS.text} dimColor={action.disabled}>
+              {action.label}
+            </Text>
+            <Text dimColor> {action.shortcut}</Text>
+          </Box>
+        ))}
+      </Box>
+      <Text dimColor>j/k move · Enter run · Esc close</Text>
+    </Box>
+  );
+}
+
+function Footer({ mode }: { mode: Mode }): React.ReactElement {
+  return (
+    <Box paddingX={1} paddingY={1} justifyContent="space-between" width="100%">
+      <Text dimColor>
+        {mode === "home" || mode === "detail"
+          ? "j/k move  enter inspect  / filter  : commands"
+          : "Esc back"}
+      </Text>
+      <Text color={COLORS.muted}>q quit</Text>
+    </Box>
+  );
+}
+
+function useTerminalTakeover(enabled: boolean): void {
+  const { stdout } = useStdout();
+  useEffect(() => {
+    if (!enabled || !stdout.isTTY) return;
+
+    let restored = false;
+    const restore = (): void => {
+      if (restored) return;
+      restored = true;
+      stdout.write("\u001B[?25h\u001B[?1049l");
+    };
+    const onSignal = (): void => {
+      restore();
+      process.exit(143);
+    };
+
+    stdout.write("\u001B[?1049h\u001B[?25l\u001B[2J\u001B[H");
+    process.once("exit", restore);
+    process.once("SIGTERM", onSignal);
+    process.once("SIGHUP", onSignal);
+    return () => {
+      restore();
+      process.removeListener("exit", restore);
+      process.removeListener("SIGTERM", onSignal);
+      process.removeListener("SIGHUP", onSignal);
+    };
+  }, [enabled, stdout]);
+}
+
+export function truncate(value: string, length: number): string {
+  return value.length > length ? `${value.slice(0, Math.max(0, length - 1))}…` : value;
+}
+
+function identifierOf(item?: Item): string {
+  return String(item?.identifier ?? item?.id ?? "—");
+}
+
+function titleOf(item?: Item): string {
+  return truncate(String(item?.name ?? item?.title ?? "Untitled work item"), 72);
+}
+
+function statusOf(item: Item): string {
+  return String(
+    item?.state_name ?? item?.state?.name ?? item?.state ?? item?.status ?? "Unstarted",
+  );
+}
+
+function statusGlyph(item: Item): string {
+  const status = statusOf(item).toLowerCase();
+  if (/done|complete|closed|cancel/.test(status)) return "✓";
+  if (/progress|started|review/.test(status)) return "●";
+  return "○";
+}
+
+function priorityOf(item: Item): string {
+  return String(item?.priority ?? "No priority");
+}
+
+function priorityColor(item: Item): string {
+  const priority = priorityOf(item).toLowerCase();
+  if (/urgent|high/.test(priority)) return COLORS.warning;
+  if (/low/.test(priority)) return COLORS.muted;
+  return COLORS.accentSoft;
+}
+
+function assigneeOf(item: Item): string {
+  const assignee = item?.assignee ?? item?.assignees?.[0];
+  if (!assignee) return "";
+  if (typeof assignee === "string") return assignee;
+  return String(
+    assignee.display_name ?? assignee.name ?? assignee.email ?? assignee.id ?? "Assigned",
+  );
+}
+
+function descriptionOf(item: Item): string {
+  const raw = item?.description_stripped ?? item?.description ?? item?.description_html;
+  if (!raw) return "No description yet.";
+  return truncate(
+    String(raw)
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+    180,
   );
 }
