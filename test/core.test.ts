@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
+import { packageVersion } from "../src/cli.js";
 import { configPath } from "../src/core/config.js";
 import * as rootCommand from "../src/commands/index.js";
 import { collectPages } from "../src/core/pagination.js";
 import { asCliError, redact } from "../src/core/errors.js";
 import { pickUnique, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
-import { HELP, runCommand } from "../src/command-helpers.js";
+import { HELP, helpFor, runCommand } from "../src/command-helpers.js";
 
 describe("plane CLI contracts", () => {
   it("follows cursors only for --all and respects the total limit", async () => {
@@ -59,6 +60,16 @@ describe("plane CLI contracts", () => {
 
   it("does not expose the raw API escape hatch", () => {
     expect(Object.keys(HELP).some((key) => key === "api")).toBe(false);
+  });
+
+  it("exposes grouped machine-readable help and a package version", () => {
+    expect(helpFor("work-item").commands).toEqual(
+      expect.arrayContaining([expect.objectContaining({ command: "work-item create" })]),
+    );
+    expect(helpFor("").commands).toEqual(
+      expect.arrayContaining([expect.objectContaining({ command: "doctor" })]),
+    );
+    expect(packageVersion()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it("does not register shared options on the root command", () => {

@@ -386,7 +386,11 @@ export function skillPath(): string {
 
 export function helpFor(key: string): Record<string, unknown> {
   const entry = HELP[key];
-  if (!entry) throw new CliError("not_found", `Command help not found: ${key || "root"}`);
+  const commandKeys = Object.keys(HELP).filter(
+    (candidate) => candidate && (!key || candidate.startsWith(`${key} `)),
+  );
+  if (!entry && commandKeys.length === 0)
+    throw new CliError("not_found", `Command help not found: ${key || "root"}`);
   const common = [
     "--base-url <url>",
     "--api-key-stdin",
@@ -414,7 +418,7 @@ export function helpFor(key: string): Record<string, unknown> {
   ];
   const action = key.split(" ").at(-1);
   const inferredArguments =
-    entry.arguments ??
+    entry?.arguments ??
     (!key
       ? []
       : key.startsWith("relation ") || key.startsWith("comment ")
@@ -422,13 +426,24 @@ export function helpFor(key: string): Record<string, unknown> {
         : key.startsWith("project-feature ") || ["list", "search", "create"].includes(action ?? "")
           ? []
           : ["reference"]);
-  return {
+  const help: Record<string, unknown> = {
     command: key || "cockpit",
-    description: entry.description,
-    destructive: Boolean(entry.destructive),
-    arguments: inferredArguments,
-    options: [...new Set([...common, ...(entry.options ?? [])])],
-    acceptedInputSources: ["named options", "--data <json>", "--data @<path>", "--data -"],
-    examples: entry.examples ?? [],
+    description: entry?.description ?? `Commands under ${key}.`,
+    ...(entry
+      ? {
+          destructive: Boolean(entry.destructive),
+          arguments: inferredArguments,
+          options: [...new Set([...common, ...(entry.options ?? [])])],
+          acceptedInputSources: ["named options", "--data <json>", "--data @<path>", "--data -"],
+          examples: entry.examples ?? [],
+        }
+      : {}),
   };
+  if (commandKeys.length > 0)
+    help.commands = commandKeys.map((command) => ({
+      command,
+      description: HELP[command].description,
+      destructive: Boolean(HELP[command].destructive),
+    }));
+  return help;
 }
