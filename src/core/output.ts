@@ -16,7 +16,7 @@ export function outputOptions(
       : options.json
         ? "json"
         : (format ?? (stdoutIsTty ? "table" : "json")),
-    color: options.color !== false && !process.env.NO_COLOR,
+    color: options.noColor !== true && !process.env.NO_COLOR,
     tty: stdoutIsTty,
   };
 }

@@ -227,7 +227,6 @@ export async function runCommand(
 ): Promise<void> {
   const options = { ...rawOptions } as Record<string, any>;
   options.noInput = Boolean(options.noInput) || Boolean(process.env.CI);
-  options.color = options.noColor ? false : undefined;
   if (
     options.data !== undefined &&
     [
@@ -270,8 +269,7 @@ export async function executeCommand(
     await runCommand(options, (input) => operation(input, args));
   } catch (error) {
     const normalized = asCliError(error);
-    const formatOptions = { ...options, color: options.noColor ? false : undefined };
-    writeError(normalized, outputOptions(formatOptions));
+    writeError(normalized, outputOptions(options));
     process.exitCode = normalized.exitCode;
   }
 }

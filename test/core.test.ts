@@ -5,7 +5,7 @@ import * as rootCommand from "../src/commands/index.js";
 import { collectPages } from "../src/core/pagination.js";
 import { asCliError, redact } from "../src/core/errors.js";
 import { pickUnique, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
-import { HELP } from "../src/command-helpers.js";
+import { HELP, runCommand } from "../src/command-helpers.js";
 
 describe("plane CLI contracts", () => {
   it("follows cursors only for --all and respects the total limit", async () => {
@@ -63,6 +63,15 @@ describe("plane CLI contracts", () => {
 
   it("does not register shared options on the root command", () => {
     expect("options" in rootCommand).toBe(false);
+  });
+
+  it("does not leak terminal color settings into mutation options", async () => {
+    let received: Record<string, unknown> | undefined;
+    await runCommand({ noColor: true, state: "done", json: true }, async (input) => {
+      received = input.options;
+      return { data: { ok: true }, meta: {} };
+    });
+    expect(received).toEqual({ noColor: true, state: "done", json: true, noInput: false });
   });
 
   it("stores configuration in the project-local .cockpit directory", () => {
