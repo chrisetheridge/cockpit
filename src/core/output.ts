@@ -1,4 +1,4 @@
-import { CliError, redact } from "./errors.js";
+import { CliError, OUTPUT_SCHEMA_VERSION, redact } from "./errors.js";
 import { sequenceData } from "./pagination.js";
 import { createTable } from "@visulima/tabular";
 
@@ -28,15 +28,20 @@ export function writeSuccess(
   stdout = process.stdout,
 ): void {
   if (options.format === "json") {
-    stdout.write(`${JSON.stringify({ data: redact(data), meta: cleanMeta(meta) })}\n`);
+    stdout.write(
+      `${JSON.stringify({
+        schemaVersion: OUTPUT_SCHEMA_VERSION,
+        data: machineValue(data),
+        meta: machineValue(cleanMeta(meta)),
+      })}\n`,
+    );
     return;
   }
   if (options.format === "jsonl") {
-    stdout.write(
-      `${sequenceData(data)
-        .map((item) => JSON.stringify(redact(item)))
-        .join("\n")}\n`,
+    const records = sequenceData(data).map((item) =>
+      JSON.stringify({ schemaVersion: OUTPUT_SCHEMA_VERSION, data: machineValue(item) }),
     );
+    if (records.length > 0) stdout.write(`${records.join("\n")}\n`);
     return;
   }
   if (options.format === "plain") {
@@ -54,6 +59,10 @@ export function writeError(error: CliError, options: OutputOptions, stderr = pro
 
 function cleanMeta(meta: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(meta).filter(([, value]) => value !== undefined));
+}
+
+function machineValue(value: unknown): unknown {
+  return redact(value);
 }
 
 function plain(data: unknown): string {

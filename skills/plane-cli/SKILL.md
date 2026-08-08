@@ -19,6 +19,8 @@ Use deterministic commands and machine-readable output for every Plane operation
 
 Always add `--json --no-input` to agent commands. Parse JSON, not human tables or terminal text.
 
+Success JSON has `{schemaVersion, data, meta}`. JSON Lines emits one `{schemaVersion, data}` object per line. Errors use `{schemaVersion, error}` on stderr.
+
 ## Preflight
 
 Check availability before the first Plane operation in an environment:

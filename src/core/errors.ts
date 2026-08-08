@@ -10,6 +10,9 @@ export type ErrorCode =
   | "network"
   | "server";
 
+export const OUTPUT_SCHEMA_VERSION = 1;
+const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
 const exitCodes: Record<ErrorCode, number> = {
   usage: 2,
   validation: 2,
@@ -42,6 +45,7 @@ export class CliError extends Error {
 
   envelope(): Record<string, unknown> {
     return {
+      schemaVersion: OUTPUT_SCHEMA_VERSION,
       error: {
         code: this.code,
         message: redact(this.message),
@@ -123,6 +127,7 @@ export function asCliError(error: unknown): CliError {
 export function redact(value: unknown): unknown {
   if (typeof value === "string") {
     return value
+      .replace(ansiPattern, "")
       .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]")
       .replace(
         /(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*[:=]\s*[^,\s}]+/gi,

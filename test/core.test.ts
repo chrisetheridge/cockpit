@@ -4,7 +4,8 @@ import { packageVersion } from "../src/cli.js";
 import { configPath } from "../src/core/config.js";
 import * as rootCommand from "../src/commands/index.js";
 import { collectPages } from "../src/core/pagination.js";
-import { asCliError, redact } from "../src/core/errors.js";
+import { CliError, asCliError, redact } from "../src/core/errors.js";
+import { outputOptions, writeError, writeSuccess } from "../src/core/output.js";
 import { pickUnique, resolveProject, resolveWorkItem } from "../src/core/resolve.js";
 import { HELP, helpFor, runCommand } from "../src/command-helpers.js";
 
@@ -55,6 +56,47 @@ describe("plane CLI contracts", () => {
       token: "[REDACTED]",
       authorization: "[REDACTED]",
       text: "ok",
+    });
+  });
+
+  it("versions and sanitizes structured output", () => {
+    const stdout = { value: "", write(chunk: string) { this.value += chunk; return true; } };
+    writeSuccess(
+      { text: "\u001b[31mred\u001b[0m", token: "secret" },
+      { nextCursor: "cursor" },
+      outputOptions({ json: true }, false),
+      stdout,
+    );
+    expect(JSON.parse(stdout.value)).toEqual({
+      schemaVersion: 1,
+      data: { text: "red", token: "[REDACTED]" },
+      meta: { nextCursor: "cursor" },
+    });
+  });
+
+  it("writes versioned JSONL records and no blank record for an empty sequence", () => {
+    const stdout = { value: "", write(chunk: string) { this.value += chunk; return true; } };
+    const options = outputOptions({ jsonl: true }, false);
+    writeSuccess([{ id: 1 }, { id: 2 }], {}, options, stdout);
+    expect(stdout.value.trim().split("\n").map((line) => JSON.parse(line))).toEqual([
+      { schemaVersion: 1, data: { id: 1 } },
+      { schemaVersion: 1, data: { id: 2 } },
+    ]);
+    stdout.value = "";
+    writeSuccess([], {}, options, stdout);
+    expect(stdout.value).toBe("");
+  });
+
+  it("versions structured errors and strips ANSI", () => {
+    const stderr = { value: "", write(chunk: string) { this.value += chunk; return true; } };
+    writeError(
+      new CliError("validation", "\u001b[31mBad input\u001b[0m"),
+      outputOptions({ json: true }, false),
+      stderr,
+    );
+    expect(JSON.parse(stderr.value)).toEqual({
+      schemaVersion: 1,
+      error: { code: "validation", message: "Bad input" },
     });
   });
 
