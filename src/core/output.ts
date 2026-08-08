@@ -1,5 +1,6 @@
 import { CliError, redact } from "./errors.js";
 import { sequenceData } from "./pagination.js";
+import { createTable } from "@visulima/tabular";
 
 export type OutputFormat = "table" | "plain" | "json" | "jsonl";
 export type OutputOptions = { format: OutputFormat; color: boolean; tty: boolean };
@@ -42,7 +43,7 @@ export function writeSuccess(
     stdout.write(`${plain(data)}\n`);
     return;
   }
-  stdout.write(`${table(data, options.color)}\n`);
+  stdout.write(`${table(data, options.color, stdout.columns ?? 120)}\n`);
 }
 
 export function writeError(error: CliError, options: OutputOptions, stderr = process.stderr): void {
@@ -63,7 +64,7 @@ function plain(data: unknown): string {
   return typeof data === "object" && data !== null ? JSON.stringify(data) : String(data ?? "");
 }
 
-function table(data: unknown, color: boolean): string {
+function table(data: unknown, color: boolean, terminalWidth: number): string {
   if (!Array.isArray(data)) return plain(data);
   if (data.length === 0) return "No results.";
   const rows = data.map((item) => {
@@ -71,18 +72,17 @@ function table(data: unknown, color: boolean): string {
     const id = value.identifier ?? value.id ?? "";
     const title = value.name ?? value.title ?? value.description ?? "";
     const status = value.state_name ?? value.state ?? value.status ?? "";
-    return [String(id), String(title), String(status)];
+    return [color ? `\x1b[1m${String(id)}\x1b[0m` : String(id), String(title), String(status)];
   });
-  const widths = rows[0].map((_, index) => Math.max(...rows.map((row) => row[index].length)));
-  return rows
-    .map((row) =>
-      row
-        .map((cell, index) =>
-          color && index === 0 ? `\x1b[1m${cell}\x1b[0m` : cell.padEnd(widths[index]),
-        )
-        .join("  "),
-    )
-    .join("\n");
+  const rendered = createTable({
+    maxWidth: Math.max(20, terminalWidth),
+    terminalWidth: Math.max(20, terminalWidth),
+    wordWrap: true,
+    style: { paddingLeft: 1, paddingRight: 1 },
+  });
+  rendered.setHeaders(["ID", "TITLE", "STATUS"]);
+  rendered.addRows(...rows);
+  return rendered.toString();
 }
 
 export function assertJsonlSequence(data: unknown): asserts data is unknown[] {

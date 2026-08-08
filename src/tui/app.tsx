@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ConfirmInput, Spinner, TextInput } from "@inkjs/ui";
+import { ConfirmInput, Select, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
 import { Box, Text, render, useApp, useInput, useStdout, useWindowSize } from "ink";
 import { type ResolvedConfig } from "../core/client.js";
 import { asCliError } from "../core/errors.js";
@@ -7,6 +7,7 @@ import { resourceOperation } from "../operations/index.js";
 
 type Item = Record<string, any>;
 type Mode = "home" | "detail" | "search" | "create" | "edit" | "confirm" | "palette";
+type Feedback = { message: string; variant: "error" | "success" | "warning" };
 
 const COLORS = {
   accent: "cyan",
@@ -51,11 +52,10 @@ export function App({
   const [selected, setSelected] = useState(0);
   const [mode, setMode] = useState<Mode>("home");
   const [paletteReturnMode, setPaletteReturnMode] = useState<"home" | "detail">("home");
-  const [paletteSelected, setPaletteSelected] = useState(0);
   const [query, setQuery] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<Feedback>();
 
   useTerminalTakeover(terminalMode === "manual");
 
@@ -93,7 +93,7 @@ export function App({
 
   async function load(): Promise<void> {
     setLoading(true);
-    setMessage("");
+    setFeedback(undefined);
     try {
       const page = await resourceOperation("work-item", "list", undefined, {
         config,
@@ -104,7 +104,10 @@ export function App({
       setSelected(0);
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      setFeedback({
+        message: `${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`,
+        variant: "error",
+      });
       onError?.(normalized);
     } finally {
       setLoading(false);
@@ -113,7 +116,7 @@ export function App({
 
   async function save(nextName = name): Promise<void> {
     if (!nextName.trim()) {
-      setMessage("A title is required.");
+      setFeedback({ message: "A title is required.", variant: "warning" });
       return;
     }
     try {
@@ -130,10 +133,16 @@ export function App({
       }
       setMode("home");
       await load();
-      setMessage(mode === "create" ? "Work item created." : "Work item updated.");
+      setFeedback({
+        message: mode === "create" ? "Work item created." : "Work item updated.",
+        variant: "success",
+      });
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      setFeedback({
+        message: `${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`,
+        variant: "error",
+      });
       onError?.(normalized);
     }
   }
@@ -147,22 +156,24 @@ export function App({
       });
       setMode("home");
       await load();
-      setMessage("Work item deleted.");
+      setFeedback({ message: "Work item deleted.", variant: "success" });
     } catch (error) {
       const normalized = asCliError(error);
-      setMessage(`${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`);
+      setFeedback({
+        message: `${normalized.message}${normalized.hint ? ` · ${normalized.hint}` : ""}`,
+        variant: "error",
+      });
       onError?.(normalized);
     }
   }
 
   function openPalette(): void {
     setPaletteReturnMode(mode === "detail" ? "detail" : "home");
-    setPaletteSelected(0);
     setMode("palette");
   }
 
-  function runPaletteAction(): void {
-    const action = paletteActions[paletteSelected];
+  function runPaletteAction(shortcut: string): void {
+    const action = paletteActions.find((candidate) => candidate.shortcut === shortcut);
     if (!action || action.disabled) return;
     if (action.shortcut === "c") {
       setName("");
@@ -186,14 +197,7 @@ export function App({
   useInput(
     (input, key) => {
       if (mode === "palette") {
-        if (key.escape) return setMode(paletteReturnMode);
-        if (input === "j" || key.downArrow)
-          return setPaletteSelected((value) => Math.min(value + 1, paletteActions.length - 1));
-        if (input === "k" || key.upArrow)
-          return setPaletteSelected((value) => Math.max(value - 1, 0));
-        if (key.home) return setPaletteSelected(0);
-        if (key.end) return setPaletteSelected(paletteActions.length - 1);
-        if (key.return) return runPaletteAction();
+        if (key.escape) setMode(paletteReturnMode);
         return;
       }
       if (input === "q") return quit();
@@ -268,7 +272,7 @@ export function App({
           onConfirm={() => void remove()}
         />
       ) : mode === "palette" ? (
-        <PalettePanel actions={paletteActions} selected={paletteSelected} />
+        <PalettePanel actions={paletteActions} onSelect={runPaletteAction} />
       ) : mode === "detail" && !isWide ? (
         <DetailPanel item={current} narrow />
       ) : (
@@ -296,16 +300,8 @@ export function App({
       <Box paddingX={1} minHeight={1}>
         {loading ? (
           <Spinner label="Syncing work items" />
-        ) : message ? (
-          <Text
-            color={
-              message.includes("required") || message.includes("failed")
-                ? COLORS.warning
-                : COLORS.good
-            }
-          >
-            {message}
-          </Text>
+        ) : feedback ? (
+          <StatusMessage variant={feedback.variant}>{feedback.message}</StatusMessage>
         ) : (
           <Text dimColor>{current ? "Ready" : "No selection"}</Text>
         )}
@@ -651,11 +647,14 @@ function ConfirmPanel({
 
 function PalettePanel({
   actions,
-  selected,
+  onSelect,
 }: {
   actions: Array<{ label: string; shortcut: string; disabled?: boolean }>;
-  selected: number;
+  onSelect: (shortcut: string) => void;
 }): React.ReactElement {
+  const options = actions
+    .filter((action) => !action.disabled)
+    .map((action) => ({ label: `${action.label}  [${action.shortcut}]`, value: action.shortcut }));
   return (
     <Box
       flexDirection="column"
@@ -670,29 +669,13 @@ function PalettePanel({
       </Text>
       <Text dimColor>Choose an action for the current project.</Text>
       <Box flexDirection="column" marginTop={1}>
-        {actions.map((action, index) => (
-          <Box key={action.shortcut} paddingX={1}>
-            <Text
-              color={index === selected ? COLORS.accent : COLORS.muted}
-              inverse={index === selected}
-            >
-              {index === selected ? "❯" : " "}{" "}
-            </Text>
-            <Text
-              color={action.disabled ? COLORS.muted : COLORS.text}
-              dimColor={action.disabled}
-              inverse={index === selected}
-            >
-              {action.label}
-            </Text>
-            <Text dimColor inverse={index === selected}>
-              {" "}
-              {action.shortcut}
-            </Text>
-          </Box>
-        ))}
+        <Select
+          options={options}
+          visibleOptionCount={Math.min(6, options.length)}
+          onChange={onSelect}
+        />
       </Box>
-      <Text dimColor>j/k move · Enter run · Esc close</Text>
+      <Text dimColor>↑/↓ move · Enter run · Esc close</Text>
     </Box>
   );
 }
