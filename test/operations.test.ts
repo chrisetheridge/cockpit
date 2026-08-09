@@ -59,3 +59,26 @@ describe("mutation verification", () => {
     expect(retrieve).toHaveBeenCalledWith("workspace", "project-id");
   });
 });
+
+describe("work-item list refreshes", () => {
+  it("reuses the resolved project ID for subsequent lists", async () => {
+    const projectsList = vi.fn().mockResolvedValue({
+      results: [{ id: "project-id", identifier: "ENG" }],
+    });
+    const workItemsList = vi.fn().mockResolvedValue({ results: [] });
+    vi.mocked(createClient).mockReturnValue({
+      projects: { list: projectsList },
+      workItems: { list: workItemsList },
+    } as any);
+
+    const first = await resourceOperation("work-item", "list", undefined, input);
+    await resourceOperation("work-item", "list", undefined, {
+      ...input,
+      options: { ...input.options, projectId: first.meta.projectId },
+    });
+
+    expect(first.meta.projectId).toBe("project-id");
+    expect(projectsList).toHaveBeenCalledTimes(1);
+    expect(workItemsList).toHaveBeenCalledTimes(2);
+  });
+});

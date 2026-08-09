@@ -4,6 +4,7 @@ export type Page<T> = {
   results?: T[];
   next_cursor?: string;
   nextCursor?: string;
+  total_pages?: number;
   [key: string]: unknown;
 };
 
@@ -23,17 +24,31 @@ export async function collectPages<T>(
   let cursor = options.cursor;
   let nextCursor: string | undefined;
   let totalResults: number | undefined;
+  let totalPages: number | undefined;
+  let batch: T[] = [];
+  let pagesFetched = 0;
+  const seenCursors = new Set<string>();
   do {
+    if (cursor) {
+      if (seenCursors.has(cursor)) break;
+      seenCursors.add(cursor);
+    }
     const remaining =
       options.limit === undefined ? undefined : Math.max(options.limit - results.length, 0);
     if (remaining === 0) break;
     const page = await fetchPage(cursor, remaining);
+    pagesFetched += 1;
     totalResults ??= typeof page.total_results === "number" ? page.total_results : undefined;
-    const batch = Array.isArray(page.results) ? page.results : [];
+    totalPages ??= typeof page.total_pages === "number" ? page.total_pages : undefined;
+    batch = Array.isArray(page.results) ? page.results : [];
     results.push(...batch.slice(0, remaining));
     nextCursor = page.next_cursor ?? page.nextCursor;
     cursor = nextCursor;
-  } while (options.all && nextCursor);
+  } while (
+    options.all &&
+    nextCursor &&
+    (totalPages === undefined || pagesFetched < totalPages)
+  );
   return {
     results,
     meta: {

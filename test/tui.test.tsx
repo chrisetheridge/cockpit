@@ -15,6 +15,7 @@ vi.mock("../src/operations/index.js", () => ({
   })),
 }));
 
+import { resourceOperation } from "../src/operations/index.js";
 import { App, truncate } from "../src/tui/app.js";
 
 describe("TUI", () => {
@@ -25,7 +26,14 @@ describe("TUI", () => {
 
   it("renders the command-center hierarchy", async () => {
     const instance = render(
-      <App config={{ baseUrl: "https://api.plane.so", workspace: "demo", project: "cockpit" }} />,
+      <App
+        config={{
+          baseUrl: "https://api.plane.so",
+          workspace: "demo",
+          project: "cockpit",
+          tuiSyncIntervalSeconds: 5,
+        }}
+      />,
     );
     await new Promise((resolve) => setImmediate(resolve));
     expect(instance.lastFrame()).toContain("COCKPIT");
@@ -36,5 +44,66 @@ describe("TUI", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(instance.lastFrame()).toContain("Work item 2");
     instance.unmount();
+  });
+
+  it("syncs work items on the configured interval while browsing", async () => {
+    vi.useFakeTimers();
+    const operation = vi.mocked(resourceOperation);
+    operation.mockClear();
+    const instance = render(
+      <App
+        config={{
+          baseUrl: "https://api.plane.so",
+          workspace: "demo",
+          project: "cockpit",
+          tuiSyncIntervalSeconds: 5,
+        }}
+      />,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(operation).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(operation).toHaveBeenCalledTimes(2);
+
+    instance.unmount();
+    vi.useRealTimers();
+  });
+
+  it("does not overlap a sync while the previous request is pending", async () => {
+    vi.useFakeTimers();
+    const operation = vi.mocked(resourceOperation);
+    let release: (() => void) | undefined;
+    operation.mockClear();
+    operation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ data: [] });
+        }),
+    );
+    const instance = render(
+      <App
+        config={{
+          baseUrl: "https://api.plane.so",
+          workspace: "demo",
+          project: "cockpit",
+          tuiSyncIntervalSeconds: 5,
+        }}
+      />,
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(operation).toHaveBeenCalledTimes(1);
+
+    release?.();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(operation).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(operation).toHaveBeenCalledTimes(2);
+
+    instance.unmount();
+    vi.useRealTimers();
   });
 });

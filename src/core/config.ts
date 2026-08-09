@@ -4,10 +4,12 @@ import { z } from "zod";
 import { CliError } from "./errors.js";
 
 export const DEFAULT_BASE_URL = "https://api.plane.so";
+export const DEFAULT_TUI_SYNC_INTERVAL_SECONDS = 5;
 const Profile = z.object({
   baseUrl: z.string().optional(),
   workspace: z.string().optional(),
   project: z.string().optional(),
+  tuiSyncIntervalSeconds: z.number().positive().finite().optional(),
 });
 const ConfigFile = z.object({
   active: z.string().optional(),
@@ -19,6 +21,7 @@ export type ConfigOverrides = {
   baseUrl?: string;
   workspace?: string;
   project?: string;
+  tuiSyncIntervalSeconds?: number;
   profile?: string;
   apiKey?: string;
   accessToken?: string;
@@ -58,6 +61,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): {
   baseUrl: string;
   workspace?: string;
   project?: string;
+  tuiSyncIntervalSeconds: number;
   profile?: string;
   apiKey?: string;
   accessToken?: string;
@@ -82,6 +86,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}): {
     baseUrl: baseUrl.replace(/\/$/, ""),
     workspace: overrides.workspace ?? process.env.PLANE_WORKSPACE_SLUG ?? profile?.workspace,
     project: overrides.project ?? process.env.PLANE_PROJECT ?? profile?.project,
+    tuiSyncIntervalSeconds:
+      overrides.tuiSyncIntervalSeconds ??
+      profile?.tuiSyncIntervalSeconds ??
+      DEFAULT_TUI_SYNC_INTERVAL_SECONDS,
     profile: profileName,
     apiKey: overrides.apiKey ?? process.env.PLANE_API_KEY,
     accessToken: overrides.accessToken ?? process.env.PLANE_ACCESS_TOKEN,

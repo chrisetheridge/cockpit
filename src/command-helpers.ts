@@ -46,7 +46,12 @@ export const HELP: Record<
   "context list": { description: "List saved non-secret contexts." },
   "context set": {
     description: "Persist a named non-secret context.",
-    options: ["--workspace <workspace>", "--project <project>", "--base-url <url>"],
+    options: [
+      "--workspace <workspace>",
+      "--project <project>",
+      "--base-url <url>",
+      "--tui-sync-interval-seconds <seconds>",
+    ],
   },
   "context use": { description: "Select a saved context." },
   "context delete": { description: "Delete a saved context.", destructive: true },
@@ -298,6 +303,7 @@ export const contextSetCommand = command(async (input, args) => {
     workspace: input.options.workspace,
     project: input.options.project,
     baseUrl: input.options.baseUrl,
+    tuiSyncIntervalSeconds: input.options.tuiSyncIntervalSeconds,
   });
   return { data: { active: saved.active, profile: saved.profiles[profileName] }, meta: {} };
 });
@@ -363,6 +369,7 @@ export function resolveConfigFromOptions(options: Record<string, any>): ReturnTy
     baseUrl: options.baseUrl,
     workspace: options.workspace,
     project: options.project,
+    tuiSyncIntervalSeconds: options.tuiSyncIntervalSeconds,
     profile: options.profile,
     apiKey: options.apiKey,
     accessToken: options.accessToken,
@@ -377,6 +384,7 @@ export function selectedContext(options: Record<string, any> = {}): Record<strin
     baseUrl: resolved.baseUrl,
     workspace: resolved.workspace,
     project: resolved.project,
+    tuiSyncIntervalSeconds: resolved.tuiSyncIntervalSeconds,
   };
 }
 

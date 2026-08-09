@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmInput, Select, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
 import { Box, Text, render, useApp, useInput, useStdout, useWindowSize } from "ink";
 import { type ResolvedConfig } from "../core/client.js";
@@ -56,6 +56,9 @@ export function App({
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<Feedback>();
+  const [pollingReady, setPollingReady] = useState(false);
+  const [projectId, setProjectId] = useState<string>();
+  const loadingRef = useRef(false);
 
   useTerminalTakeover(terminalMode === "manual");
 
@@ -88,20 +91,32 @@ export function App({
   }, []);
 
   useEffect(() => {
+    if (!pollingReady || (mode !== "home" && mode !== "detail")) return;
+    const interval = setInterval(() => {
+      void load(false);
+    }, config.tuiSyncIntervalSeconds * 1000);
+    return () => clearInterval(interval);
+  }, [config.tuiSyncIntervalSeconds, mode, pollingReady]);
+
+  useEffect(() => {
     setSelected((value) => Math.min(value, Math.max(filtered.length - 1, 0)));
   }, [filtered.length]);
 
-  async function load(): Promise<void> {
+  async function load(resetSelection = true): Promise<void> {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setFeedback(undefined);
     try {
       const page = await resourceOperation("work-item", "list", undefined, {
         config,
-        options: { limit: 50 },
+        options: { limit: 50, ...(projectId ? { projectId } : {}) },
       });
       const nextItems = (page.data as Item[]) ?? [];
       setItems(nextItems);
-      setSelected(0);
+      if (resetSelection) setSelected(0);
+      if (typeof page.meta?.projectId === "string") setProjectId(page.meta.projectId);
+      setPollingReady(true);
     } catch (error) {
       const normalized = asCliError(error);
       setFeedback({
@@ -110,6 +125,7 @@ export function App({
       });
       onError?.(normalized);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }

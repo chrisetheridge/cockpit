@@ -217,10 +217,10 @@ async function workItemOperation(
   listOptions: { all: boolean; limit?: number; cursor?: string },
 ): Promise<any> {
   if (action === "list") {
-    const projectId = projectRef
-      ? (await resolveProject(client, workspace, projectRef)).id
-      : undefined;
-    return paged(
+    const projectId =
+      input.options.projectId ??
+      (projectRef ? (await resolveProject(client, workspace, projectRef)).id : undefined);
+    const result = await paged(
       (cursor, limit) =>
         projectId
           ? client.workItems.list(workspace, projectId, {
@@ -235,6 +235,10 @@ async function workItemOperation(
             }),
       listOptions,
     );
+    return {
+      ...result,
+      meta: { ...result.meta, ...(projectId ? { projectId } : {}) },
+    };
   }
   if (action === "search") {
     const query = input.options.query;

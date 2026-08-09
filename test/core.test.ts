@@ -26,6 +26,20 @@ describe("plane CLI contracts", () => {
     expect(page.meta.totalResults).toBe(3);
   });
 
+  it("stops when a server reports one page despite returning a cursor", async () => {
+    let calls = 0;
+    const page = await collectPages(
+      async () => {
+        calls += 1;
+        return { results: [{ id: 1 }], next_cursor: "stale", total_pages: 1 };
+      },
+      { all: true },
+    );
+
+    expect(calls).toBe(1);
+    expect(page.results).toEqual([{ id: 1 }]);
+  });
+
   it("rejects ambiguous references with candidates", () => {
     expect(() =>
       pickUnique(
