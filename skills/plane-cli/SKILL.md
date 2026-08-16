@@ -17,7 +17,9 @@ Use deterministic commands and machine-readable output for every Plane operation
 6. Verify the resulting resource.
 7. Report stable identifiers and the material result.
 
-Always add `--json --no-input` to agent commands. Parse JSON, not human tables or terminal text.
+Use `--json` for agent commands. Commands automatically avoid prompts in CI,
+pipes, and machine-output modes. Add `--no-input` only when forcing that
+behavior in an interactive terminal. Parse JSON, not human tables or terminal text.
 
 Success JSON has `{schemaVersion, data, meta}`. JSON Lines emits one `{schemaVersion, data}` object per line. Errors use `{schemaVersion, error}` on stderr.
 
@@ -27,8 +29,8 @@ Check availability before the first Plane operation in an environment:
 
 ```bash
 command -v plane
-cockpit doctor --json --no-input
-cockpit context show --json --no-input
+cockpit doctor --json
+cockpit context show --json
 ```
 
 If `plane` is missing, report that the CLI must be installed. Do not install software unless the user requested it.
@@ -43,7 +45,7 @@ If authentication is missing or rejected:
 If context is missing, derive workspace/project identifiers from the user's request or existing repository context. Otherwise ask for the missing choice. Set context only when the user intends it to persist:
 
 ```bash
-cockpit context set --workspace acme --project ENG --json --no-input
+cockpit context set --workspace acme --project ENG --json
 ```
 
 Prefer per-command `--workspace` and `--project` when working temporarily outside the saved context.
@@ -53,9 +55,9 @@ Prefer per-command `--workspace` and `--project` when working temporarily outsid
 Treat installed machine-readable help as authoritative; the CLI may expose more commands than this skill lists.
 
 ```bash
-cockpit help --json --no-input
-cockpit help work-item --json --no-input
-cockpit help work-item create --json --no-input
+cockpit help --json
+cockpit help work-item --json
+cockpit help work-item create --json
 ```
 
 Inspect help before using an unfamiliar command, option, payload field, or extended resource. Do not guess flags from the Plane web UI or raw REST API.
@@ -64,7 +66,7 @@ If help cannot be executed, describe the intended operation but do not fabricate
 Use the regular grammar:
 
 ```text
-plane <resource> <action> [reference] [options] --json --no-input
+plane <resource> <action> [reference] [options] --json
 ```
 
 Regular actions are `list`, `get`, `create`, `update`, and `delete`. Domain actions such as `archive`, `add-items`, or `transfer-items` are explicit.
@@ -91,17 +93,17 @@ Use the smallest query that establishes the requested fact. Do not fetch every p
 Typical reads:
 
 ```bash
-cockpit user me --json --no-input
-cockpit project list --json --no-input
-cockpit member list --project ENG --json --no-input
-cockpit work-item get ENG-142 --json --no-input
-cockpit work-item search --project ENG --query 'authentication race' --json --no-input
-cockpit state list --project ENG --json --no-input
-cockpit label list --project ENG --json --no-input
-cockpit comment list ENG-142 --json --no-input
-cockpit cycle list --project ENG --json --no-input
-cockpit module list --project ENG --json --no-input
-cockpit relation list ENG-142 --json --no-input
+cockpit user me --json
+cockpit project list --json
+cockpit member list --project ENG --json
+cockpit work-item get ENG-142 --json
+cockpit work-item search --project ENG --query 'authentication race' --json
+cockpit state list --project ENG --json
+cockpit label list --project ENG --json
+cockpit comment list ENG-142 --json
+cockpit cycle list --project ENG --json
+cockpit module list --project ENG --json
+cockpit relation list ENG-142 --json
 ```
 
 Before relying on any example option, confirm it in installed help.
@@ -119,7 +121,7 @@ Machine output has a `data` value and optional `meta.nextCursor`.
 For large results, prefer JSON Lines when command help reports support:
 
 ```bash
-cockpit work-item list --project ENG --all --jsonl --no-input
+cockpit work-item list --project ENG --all --jsonl
 ```
 
 ## Mutation discipline
@@ -138,9 +140,9 @@ After a successful mutation, retrieve the resource again when the mutation respo
 Use named options for common scalar changes. Use `--data` for complete or uncommon payloads:
 
 ```bash
-cockpit work-item create --project ENG --data @work-item.json --json --no-input
-cockpit work-item update ENG-142 --data '{"priority":"high"}' --json --no-input
-cockpit work-item update ENG-142 --data - --json --no-input < update.json
+cockpit work-item create --project ENG --data @work-item.json --json
+cockpit work-item update ENG-142 --data '{"priority":"high"}' --json
+cockpit work-item update ENG-142 --data - --json < update.json
 ```
 
 Do not combine named mutation options with `--data`; the CLI rejects ambiguous sources. Inspect command help for the current payload schema.
@@ -172,10 +174,10 @@ Inspect the comment command's JSON help for its content field and rich-text expe
 Use the relationship actions rather than editing raw work-item fields when available:
 
 ```bash
-cockpit cycle add-items <cycle> --work-item ENG-142 --json --no-input
-cockpit cycle remove-item <cycle> --work-item ENG-142 --json --no-input
-cockpit module add-items <module> --work-item ENG-142 --json --no-input
-cockpit module remove-item <module> --work-item ENG-142 --json --no-input
+cockpit cycle add-items <cycle> --work-item ENG-142 --json
+cockpit cycle remove-item <cycle> --work-item ENG-142 --json
+cockpit module add-items <module> --work-item ENG-142 --json
+cockpit module remove-item <module> --work-item ENG-142 --json
 ```
 
 Resolve cycle/module references before mutation and verify membership afterward.
@@ -199,7 +201,7 @@ For an authorized non-interactive deletion:
 4. Verify absence or archived state afterward.
 
 ```bash
-cockpit work-item delete ENG-142 --yes --json --no-input
+cockpit work-item delete ENG-142 --yes --json
 ```
 
 Never use `--yes` to bypass an unresolved target, ambiguous name, or missing user decision.

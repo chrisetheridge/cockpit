@@ -40,7 +40,7 @@ export const HELP: Record<
   },
   doctor: {
     description: "Validate configuration and Plane connectivity.",
-    examples: ["cockpit doctor --json --no-input"],
+    examples: ["cockpit doctor --json"],
   },
   "context show": { description: "Show the selected non-secret context." },
   "context list": { description: "List saved non-secret contexts." },
@@ -231,7 +231,14 @@ export async function runCommand(
   }>,
 ): Promise<void> {
   const options = { ...rawOptions } as Record<string, any>;
-  options.noInput = Boolean(options.noInput) || Boolean(process.env.CI);
+  options.noInput =
+    Boolean(options.noInput) ||
+    Boolean(process.env.CI) ||
+    !process.stdin.isTTY ||
+    !process.stdout.isTTY ||
+    Boolean(options.json) ||
+    Boolean(options.jsonl) ||
+    ["json", "jsonl"].includes(options.output);
   if (
     options.data !== undefined &&
     [

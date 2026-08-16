@@ -138,7 +138,12 @@ describe("plane CLI contracts", () => {
       received = input.options;
       return { data: { ok: true }, meta: {} };
     });
-    expect(received).toEqual({ noColor: true, state: "done", json: true, noInput: Boolean(process.env.CI) });
+    expect(received).toEqual({
+      noColor: true,
+      state: "done",
+      json: true,
+      noInput: true,
+    });
   });
 
   it("stores configuration in the project-local .cockpit directory", () => {

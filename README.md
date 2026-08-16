@@ -21,7 +21,7 @@ pnpm build
 The built CLI is `dist/cli.js`. Run it directly from the checkout:
 
 ```sh
-node dist/cli.js doctor --json --no-input
+node dist/cli.js doctor --json
 ```
 
 ## Configure
@@ -37,8 +37,8 @@ export PLANE_PROJECT="ENG"
 Check connectivity:
 
 ```sh
-cockpit doctor --json --no-input
-cockpit context show --json --no-input
+cockpit doctor --json
+cockpit context show --json
 ```
 
 For reusable non-secret context, use profiles:
@@ -52,13 +52,14 @@ Self-hosted Plane instances can set `PLANE_BASE_URL` or pass `--base-url`. HTTPS
 
 ## Usage
 
-Use `--json --no-input` for scripts and agents:
+Use `--json` for scripts and agents. Commands automatically avoid prompts in
+CI, pipes, and machine-output modes:
 
 ```sh
-cockpit project list --json --no-input
-cockpit work-item search --query "authentication" --json --no-input
-cockpit work-item get ENG-142 --json --no-input
-cockpit work-item update ENG-142 --data '{"priority":"high"}' --json --no-input
+cockpit project list --json
+cockpit work-item search --query "authentication" --json
+cockpit work-item get ENG-142 --json
+cockpit work-item update ENG-142 --data '{"priority":"high"}' --json
 ```
 
 Run `cockpit` without arguments in an interactive terminal to open the TUI. Use `cockpit tui` to request it explicitly.
