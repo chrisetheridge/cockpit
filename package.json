@@ -1,6 +1,6 @@
 {
   "name": "@chrisetheridge/cockpit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Agent-first command-line client for Plane",
   "repository": {
     "type": "git",
